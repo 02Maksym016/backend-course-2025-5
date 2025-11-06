@@ -1,25 +1,38 @@
-import { Command } from "commander";
-import http from "http";
-import fs from "fs/promises";
+import path from "path";
+import url from "url";
 
-const program = new Command();
+const cacheDir = options.cache;
 
-program
-  .requiredOption("-h, --host <host>", "адреса сервера")
-  .requiredOption("-p, --port <port>", "порт сервера")
-  .requiredOption("-c, --cache <path>", "шлях до кешу");
+const server = http.createServer(async (req, res) => {
+  const code = url.parse(req.url).pathname.slice(1);
+  const filePath = path.join(cacheDir, `${code}.jpg`);
 
-program.parse(process.argv);
-const options = program.opts();
-
-// створити теку кешу, якщо не існує
-await fs.mkdir(options.cache, { recursive: true });
-
-const server = http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("Proxy server is running...");
-});
-
-server.listen(options.port, options.host, () => {
-  console.log(`Server running at http://${options.host}:${options.port}/`);
+  if (req.method === "GET") {
+    try {
+      const data = await fs.readFile(filePath);
+      res.writeHead(200, { "Content-Type": "image/jpeg" });
+      res.end(data);
+    } catch {
+      res.writeHead(404);
+      res.end("Not Found");
+    }
+  } else if (req.method === "PUT") {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    await fs.writeFile(filePath, Buffer.concat(chunks));
+    res.writeHead(201);
+    res.end("Created");
+  } else if (req.method === "DELETE") {
+    try {
+      await fs.unlink(filePath);
+      res.writeHead(200);
+      res.end("Deleted");
+    } catch {
+      res.writeHead(404);
+      res.end("Not Found");
+    }
+  } else {
+    res.writeHead(405);
+    res.end("Method Not Allowed");
+  }
 });
